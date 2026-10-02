@@ -1,0 +1,1286 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>다했니? 체크판</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✅</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jua&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --board:#24463B;      /* 칠판 */
+  --board-ink:#E8F0E9;
+  --paper:#EEF1EA;      /* 교실 바닥 */
+  --desk:#FFFFFF;
+  --line:#CED6CA;
+  --ink:#1B2520;
+  --muted:#6A766E;
+  --stamp:#D0362A;      /* 도장 */
+  --done-bg:#FFF3D9;
+  --done-line:#E8C27E;
+  --skip:#9AA39C;
+  --ok:#2F8A5B;
+  --warn:#C98A12;
+  --display:'Jua','IBM Plex Sans KR',system-ui,sans-serif;
+  --body:'IBM Plex Sans KR',system-ui,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  background:var(--paper);color:var(--ink);font-family:var(--body);font-size:16px;
+  display:flex;flex-direction:column;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid #F2B705;outline-offset:2px}
+
+/* ---------- 상단 칠판 막대 ---------- */
+.bar{
+  background:var(--board);color:var(--board-ink);
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:10px 16px;position:relative;
+}
+.brand{font-family:var(--display);font-size:22px;opacity:.75;white-space:nowrap}
+.act-wrap{position:relative;flex:1 1 260px;min-width:0}
+.act-btn{
+  display:flex;align-items:baseline;gap:10px;max-width:100%;
+  background:none;border:none;padding:4px 6px;border-radius:8px;text-align:left;color:var(--board-ink);
+}
+.act-btn:hover{background:rgba(255,255,255,.08)}
+.act-name{font-family:var(--display);font-size:clamp(22px,2.6vw,34px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.act-date{font-size:14px;opacity:.7;white-space:nowrap}
+.act-caret{font-size:14px;opacity:.7}
+.act-menu{
+  position:absolute;top:calc(100% + 6px);left:0;z-index:30;width:min(420px,90vw);
+  background:#fff;color:var(--ink);border-radius:12px;box-shadow:0 12px 32px rgba(20,40,30,.25);
+  padding:6px;max-height:60vh;overflow:auto;
+}
+.act-menu button{
+  display:flex;justify-content:space-between;gap:10px;width:100%;
+  background:none;border:none;text-align:left;padding:10px 12px;border-radius:8px;
+}
+.act-menu button:hover,.act-menu button.on{background:#EEF3EE}
+.act-menu .meta{color:var(--muted);font-size:13px;white-space:nowrap}
+.act-menu .foot{border-top:1px solid #E3E8E1;margin-top:4px;color:var(--muted)}
+.tbtn{
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);color:var(--board-ink);
+  border-radius:10px;padding:8px 12px;white-space:nowrap;
+}
+.tbtn:hover{background:rgba(255,255,255,.18)}
+.tbtn.add{background:#F2B705;color:#2B2200;border-color:#F2B705;font-weight:700}
+.seg{display:inline-flex;background:rgba(0,0,0,.22);border-radius:10px;padding:3px}
+.seg button{border:none;background:none;color:var(--board-ink);padding:7px 14px;border-radius:8px;opacity:.75}
+.seg button.on{background:var(--board-ink);color:var(--board);opacity:1;font-weight:700}
+.count{font-family:var(--display);font-size:clamp(24px,2.6vw,36px);white-space:nowrap}
+.count small{font-family:var(--body);font-size:14px;opacity:.7;margin-left:2px}
+.sync{width:10px;height:10px;border-radius:50%;background:#7c8a82;flex:none}
+.sync.ok{background:#5BD08C}.sync.busy{background:#F2B705}.sync.err{background:#FF6B5E}
+.progress{height:6px;background:#D6DDD2}
+.progress i{display:block;height:100%;width:0;background:var(--ok);transition:width .4s}
+
+.banner{display:none;padding:8px 16px;font-size:14px;gap:10px;align-items:center;flex-wrap:wrap}
+.banner.show{display:flex}
+.banner.demo{background:#FFF7DD;color:#5B4500}
+.banner.err{background:#FFE6E2;color:#7A1B12}
+.banner button{border:1px solid currentColor;background:none;border-radius:8px;padding:3px 10px}
+
+main{flex:1;min-height:0;display:flex;flex-direction:column}
+
+/* ---------- 자리별 ---------- */
+#seatView{flex:1;min-height:0;display:flex;flex-direction:column;padding:14px 18px 12px;gap:12px}
+#seatView.teacher{flex-direction:column-reverse}
+.desk-front{
+  align-self:center;background:var(--board);color:var(--board-ink);
+  font-family:var(--display);font-size:18px;padding:6px 48px;border-radius:8px;
+}
+#grid{flex:1;min-height:0;display:grid;gap:clamp(6px,1vw,14px);--fs:20px}
+.desk{
+  position:relative;border:2px solid var(--line);background:var(--desk);border-radius:12px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-size:var(--fs);padding:4px;overflow:hidden;min-width:0;min-height:0;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:manipulation;
+  transition:background-color .2s,border-color .2s;
+}
+.desk:hover{border-color:#9FB3A5}
+.desk .no{position:absolute;top:.22em;left:.45em;font-size:.42em;color:var(--muted)}
+.desk .nm{font-weight:700;line-height:1.1;white-space:nowrap}
+.desk .stamp{display:none}
+.desk.done{background:var(--done-bg);border-color:var(--done-line)}
+.desk.done .nm{font-size:.48em;margin-top:.25em;color:#7A5A22;font-weight:500}
+.desk.done .stamp{
+  display:block;font-family:var(--display);color:var(--stamp);font-size:1.08em;line-height:1;white-space:nowrap;
+  border:.07em solid var(--stamp);border-radius:.3em;padding:.08em .28em .02em;
+  transform:rotate(-8deg);
+}
+.desk.pop .stamp{animation:stamp .5s cubic-bezier(.2,1.5,.4,1)}
+@keyframes stamp{0%{transform:scale(2.4) rotate(-8deg);opacity:0}60%{opacity:1}100%{transform:scale(1) rotate(-8deg)}}
+.desk.skip{background:repeating-linear-gradient(45deg,#E2E6E0 0 7px,#ECEFE9 7px 14px);color:var(--skip);border-style:dashed}
+.desk.skip::after{content:'결석';font-size:.42em;margin-top:.15em}
+.desk.gap{visibility:hidden}
+.desk.unknown{border-color:var(--stamp);border-style:dashed;color:var(--stamp)}
+/* 자리 바꾸기 모드 */
+#seatView.editing .desk.gap{visibility:visible;border-style:dashed;background:transparent}
+#seatView.editing .desk.sel,.tray button.sel{outline:4px solid #F2B705;outline-offset:2px}
+.editbar{
+  display:none;align-items:center;gap:8px;flex-wrap:wrap;
+  background:#FFF7DD;border:1px solid #F0D27A;border-radius:12px;padding:10px 12px;font-size:14px;
+}
+#seatView.editing .editbar{display:flex}
+.editbar b{margin-right:auto}
+.editbar button{border:1px solid #D9BE6A;background:#fff;border-radius:8px;padding:6px 10px}
+.editbar button.primary{background:var(--board);color:#fff;border-color:var(--board)}
+.tray{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px;color:var(--muted)}
+.tray button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 12px;color:var(--ink)}
+.tray button.done{background:var(--done-bg);border-color:var(--done-line)}
+.empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;color:var(--muted);padding:24px}
+.empty-state h2{font-family:var(--display);font-weight:400;color:var(--ink);font-size:28px;margin:0}
+.empty-state button{background:var(--board);color:#fff;border:none;border-radius:10px;padding:10px 18px}
+
+/* ---------- 명단 ---------- */
+#listView{flex:1;min-height:0;overflow:auto;padding:16px 18px 32px}
+.list-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 14px}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.list-tools .spacer{flex:1}
+.ghost{border:1px solid var(--line);background:#fff;border-radius:10px;padding:6px 12px}
+.rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));gap:8px}
+.row{display:flex;align-items:stretch;background:#fff;border:2px solid var(--line);border-radius:12px;overflow:hidden}
+.row .main{flex:1;display:flex;align-items:center;gap:12px;background:none;border:none;padding:12px 14px;text-align:left;min-width:0}
+.row .n{color:var(--muted);font-size:14px;width:2em;flex:none}
+.row .nm{font-weight:700;font-size:19px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .pill{font-family:var(--display);font-size:20px;color:#B8C0B9;flex:none}
+.row.done{background:var(--done-bg);border-color:var(--done-line)}
+.row.done .pill{color:var(--stamp)}
+.row.skip{background:#EEF0EC}
+.row.skip .nm{color:var(--skip);text-decoration:line-through}
+.row.skip .pill{color:var(--skip);font-size:15px;font-family:var(--body)}
+.row .skipbtn{border:none;border-left:1px solid var(--line);background:none;color:var(--muted);font-size:13px;padding:0 12px}
+
+/* ---------- 설정 서랍 ---------- */
+.scrim{position:fixed;inset:0;background:rgba(20,30,25,.35);z-index:40}
+.drawer{
+  position:fixed;top:0;right:0;bottom:0;width:min(460px,100vw);z-index:41;background:#fff;
+  overflow:auto;padding:calc(16px + env(safe-area-inset-top,0px)) 20px calc(32px + env(safe-area-inset-bottom,0px));
+  box-shadow:-12px 0 32px rgba(20,40,30,.2);
+}
+.drawer header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.drawer h2{font-family:var(--display);font-weight:400;font-size:26px;margin:0}
+.drawer section{border-top:1px solid #E3E8E1;padding:18px 0}
+.drawer h3{font-size:16px;margin:0 0 8px}
+.hint{color:var(--muted);font-size:13.5px;line-height:1.55;margin:0 0 10px}
+.drawer label.f{display:block;font-size:13.5px;color:var(--muted);margin-bottom:10px}
+.drawer label.f input{display:block;width:100%;margin-top:4px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;color:var(--ink)}
+.drawer textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:15px;line-height:1.5;resize:vertical}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 14px}
+.btn.primary{background:var(--board);color:#fff;border-color:var(--board)}
+.btn.danger{color:var(--stamp);border-color:#EBC0BA}
+.sizebox{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px;margin:0 0 12px}
+.sizebox input[type=number]{width:56px;padding:6px;border:1px solid var(--line);border-radius:6px}
+.sizebox label{margin-left:8px;color:var(--muted)}
+.filebtn{display:inline-block;background:var(--board);color:#fff;border-radius:10px;padding:9px 16px;cursor:pointer}
+details{margin-top:10px}
+summary{cursor:pointer;color:var(--muted);font-size:14px}
+.seg.light{background:#E8ECE6}
+.seg.light button{color:var(--ink)}
+.seg.light button.on{background:var(--board);color:#fff}
+.mgr{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.mgr .it{display:grid;grid-template-columns:1fr auto;gap:6px;border:1px solid var(--line);border-radius:10px;padding:8px}
+.mgr .it.arch{background:#F4F6F2}
+.mgr input{border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-width:0}
+.mgr .acts{display:flex;gap:4px;grid-column:1/-1;align-items:center}
+.mgr .acts input{width:150px}
+.mgr .acts span{flex:1}
+.mgr .acts button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:4px 8px;font-size:13px}
+
+/* ---------- 대화상자 ---------- */
+dialog{border:none;border-radius:16px;padding:22px;width:min(560px,94vw);box-shadow:0 20px 50px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(20,30,25,.4)}
+dialog h2{font-family:var(--display);font-weight:400;font-size:24px;margin:0 0 14px}
+dialog label.f{display:block;font-size:14px;color:var(--muted);margin-bottom:12px}
+dialog label.f input{display:block;width:100%;margin-top:4px;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:17px;color:var(--ink)}
+#seatDlg{width:min(860px,96vw)}
+.front-opt{display:flex;gap:14px;flex-wrap:wrap;font-size:14px;margin-bottom:12px;align-items:center}
+.prev-wrap{overflow:auto;background:var(--paper);border-radius:12px;padding:12px;max-height:46vh}
+.prev-front{text-align:center;margin-bottom:8px}
+.prev-front span{background:var(--board);color:#fff;border-radius:6px;padding:3px 24px;font-size:13px}
+.prev{display:grid;gap:5px}
+.prev div{background:#fff;border:1px solid var(--line);border-radius:6px;padding:6px 2px;text-align:center;font-size:13px;white-space:nowrap;min-width:52px}
+.prev div.gap{background:none;border:none}
+.warn{font-size:13.5px;line-height:1.6;margin-top:10px}
+.warn p{margin:4px 0}
+.warn .bad{color:var(--stamp)}
+.warn .meh{color:#8A6100}
+.warn .good{color:var(--ok)}
+
+/* ---------- 모두 완료 & 알림 ---------- */
+#cele{
+  position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+  background:rgba(255,243,217,.88);cursor:pointer;
+}
+#cele.show{display:flex}
+#cele div{
+  font-family:var(--display);color:var(--stamp);font-size:clamp(64px,13vw,180px);
+  border:.06em solid var(--stamp);border-radius:.25em;padding:.05em .35em;transform:rotate(-6deg);
+  animation:stamp .6s cubic-bezier(.2,1.5,.4,1);
+}
+#toast{
+  position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  background:var(--ink);color:#fff;border-radius:10px;padding:10px 16px;font-size:14px;z-index:70;
+  opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw;
+}
+#toast.show{opacity:1}
+[hidden]{display:none !important}
+
+@media (max-width:720px){
+  .brand{display:none}
+  .bar{gap:8px;padding:8px 10px}
+  #seatView{padding:10px}
+  .desk{border-radius:8px}
+}
+@media (prefers-reduced-motion:reduce){
+  .desk.pop .stamp,#cele div{animation:none}
+  .progress i{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand">다했니?</div>
+  <div class="act-wrap">
+    <button class="act-btn" id="actBtn" aria-haspopup="true" aria-expanded="false">
+      <span class="act-name" id="actName">활동을 추가하세요</span>
+      <span class="act-date" id="actDate"></span>
+      <span class="act-caret">▾</span>
+    </button>
+    <div class="act-menu" id="actMenu" hidden></div>
+  </div>
+  <button class="tbtn add" id="addActBtn">+ 활동</button>
+  <div class="seg" role="group" aria-label="보기 방식">
+    <button data-mode="seat">자리별</button>
+    <button data-mode="list">명단</button>
+  </div>
+  <div class="count" aria-live="polite"><span id="doneN">0</span> / <span id="totalN">0</span><small>명</small></div>
+  <span class="sync" id="sync" title="이 기기에만 저장"></span>
+  <button class="tbtn" id="fsBtn" title="전체 화면">⛶</button>
+  <button class="tbtn" id="setBtn" title="설정">설정</button>
+</header>
+<div class="progress"><i id="progBar"></i></div>
+<div class="banner demo" id="demoBanner">
+  구글 시트에 아직 연결하지 않았습니다. 지금은 예시 데이터가 이 기기에만 저장됩니다.
+  <button id="demoGo">시트 연결하기</button>
+</div>
+<div class="banner err" id="errBanner">
+  <span id="errMsg">저장하지 못한 체크가 있습니다.</span>
+  <button id="retryBtn">다시 보내기</button>
+</div>
+
+<main>
+  <section id="seatView">
+    <div class="desk-front" id="deskFront">교탁</div>
+    <div id="grid"></div>
+    <div class="tray" id="tray"></div>
+    <div class="editbar">
+      <b>자리 바꾸기: 두 자리를 차례로 누르면 서로 바뀝니다. 아래 이름표를 누른 뒤 빈자리를 누르면 앉힙니다.</b>
+      <button id="addRowBtn">+ 맨 뒤 줄</button>
+      <button id="addColBtn">+ 오른쪽 열</button>
+      <button id="trimBtn">빈 가장자리 정리</button>
+      <button id="editCancel">취소</button>
+      <button id="editDone" class="primary">자리 저장</button>
+    </div>
+  </section>
+  <section id="listView" hidden>
+    <div class="list-tools">
+      <button class="chip" data-filter="all">전체</button>
+      <button class="chip" data-filter="todo">아직 안 한 학생</button>
+      <button class="chip" data-filter="done">완료</button>
+      <span class="spacer"></span>
+      <button class="ghost" id="allDone">남은 학생 모두 완료</button>
+      <button class="ghost" id="clearAll">체크 모두 지우기</button>
+    </div>
+    <div class="rows" id="rows"></div>
+  </section>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="설정">
+  <header><h2>설정</h2><button class="btn" id="drClose">닫기</button></header>
+
+  <section id="secConn">
+    <h3>구글 시트 연결</h3>
+    <p class="hint" id="connState"></p>
+    <label class="f">웹 앱 주소<input id="inUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off"></label>
+    <label class="f">비밀번호 (Code.gs의 API_KEY)<input id="inKey" type="password" autocomplete="off"></label>
+    <div class="btns">
+      <button class="btn primary" id="connBtn">연결하기</button>
+      <button class="btn" id="linkBtn">다른 기기용 연결 링크 복사</button>
+      <button class="btn danger" id="disconnBtn">이 기기 연결 끊기</button>
+    </div>
+    <p class="hint" style="margin-top:10px">연결 링크에는 비밀번호가 들어 있습니다. 내 휴대폰·교실 컴퓨터에서만 쓰고 학생에게 보내지 마세요.</p>
+  </section>
+
+  <section id="secRoster">
+    <h3>명단</h3>
+    <p class="hint">한 줄에 한 명씩 "번호 이름"으로 적습니다. 엑셀에서 번호·이름 두 열을 복사해 붙여넣어도 됩니다. 구글 시트의 '명단' 탭에서 직접 고쳐도 됩니다.</p>
+    <textarea id="rosterTa" rows="8" placeholder="1 김하늘&#10;2 이서준"></textarea>
+    <div class="btns"><button class="btn primary" id="rosterSave">명단 저장</button></div>
+  </section>
+
+  <section id="secSeat">
+    <h3>자리표</h3>
+    <p class="hint" id="seatInfo"></p>
+    <p class="hint">PDF·엑셀·CSV·사진 자리표를 올리면 자리 위치대로 읽습니다. 칸에는 이름, 번호, "번호 이름" 어느 것이든 괜찮고, '교탁'이 적혀 있으면 방향도 알아서 맞춥니다. 파일은 이 브라우저 안에서만 읽고 어디에도 보내지 않습니다.</p>
+    <div class="sizebox">
+      <span>자리 배열</span>
+      <input type="number" id="rowsIn" min="1" max="15" aria-label="줄 수"> 줄 ×
+      <input type="number" id="colsIn" min="1" max="15" aria-label="칸 수"> 칸
+      <label><input type="checkbox" id="sizeAuto"> 파일에 맞춰 자동</label>
+    </div>
+    <label class="filebtn">자리표 파일 올리기<input type="file" id="seatFile" accept=".pdf,.xlsx,.xls,.csv,.ods,.png,.jpg,.jpeg,.webp" hidden></label>
+    <details>
+      <summary>파일 대신 복사해서 붙여넣기</summary>
+      <textarea id="seatPaste" rows="5" placeholder="엑셀이나 구글 시트에서 자리표 칸들을 드래그해 복사한 뒤 여기에 붙여넣으세요"></textarea>
+      <div class="btns"><button class="btn" id="seatPasteBtn">붙여넣은 내용 읽기</button></div>
+    </details>
+    <div class="btns" style="margin-top:12px"><button class="btn" id="editSeatBtn">화면에서 자리 직접 바꾸기</button></div>
+  </section>
+
+  <section>
+    <h3>자리별 화면 방향</h3>
+    <p class="hint">아이들에게 보여 줄 때는 학생 시점, 교탁에서 볼 때는 교사 시점이 편합니다.</p>
+    <div class="seg light" id="viewSeg">
+      <button data-view="student">학생 시점 (교탁이 위)</button>
+      <button data-view="teacher">교사 시점 (교탁이 아래)</button>
+    </div>
+  </section>
+
+  <section id="secActs">
+    <h3>활동 관리</h3>
+    <p class="hint">활동마다 체크가 따로 저장됩니다. 끝난 활동은 '보관'하면 목록에서 숨겨지고 기록은 남습니다.</p>
+    <label style="font-size:14px"><input type="checkbox" id="showArch"> 보관한 활동도 보기</label>
+    <div class="mgr" id="actMgr"></div>
+  </section>
+</aside>
+
+<dialog id="actDlg">
+  <form method="dialog" id="actForm">
+    <h2>새 활동</h2>
+    <label class="f">활동 이름<input id="actIn" required maxlength="60" placeholder="예: 학습지 2쪽, 실험 보고서 제출"></label>
+    <label class="f">날짜<input id="actDateIn" type="date"></label>
+    <div class="btns" style="justify-content:flex-end">
+      <button class="btn" value="cancel" formnovalidate>취소</button>
+      <button class="btn primary" value="ok">추가</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="seatDlg">
+  <h2>읽어 온 자리표 확인</h2>
+  <div class="front-opt">
+    <span>자리표 파일에서 교탁 위치:</span>
+    <label><input type="radio" name="front" value="auto" checked> 자동 <span id="frontAuto"></span></label>
+    <label><input type="radio" name="front" value="top"> 위쪽</label>
+    <label><input type="radio" name="front" value="bottom"> 아래쪽</label>
+  </div>
+  <div class="prev-wrap">
+    <div class="prev-front"><span>교탁</span></div>
+    <div class="prev" id="seatPrev"></div>
+  </div>
+  <div class="warn" id="seatWarn"></div>
+  <div class="btns" style="justify-content:flex-end;margin-top:14px">
+    <button class="btn" id="seatCancel">취소</button>
+    <button class="btn primary" id="seatApply">이 자리로 바꾸기</button>
+  </div>
+</dialog>
+
+<div id="cele" role="status"><div>모두 완료!</div></div>
+<div id="toast" role="status"></div>
+
+<script>
+/* ======================== 기본 도구 ======================== */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const today = () => { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+const uid = () => 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+const LS_DATA = 'dahaenni.data.v1', LS_PREF = 'dahaenni.pref.v1';
+
+function lsGet(k){ try{ return JSON.parse(localStorage.getItem(k) || 'null'); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+
+let toastT;
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+/* ======================== 상태 ======================== */
+const DEMO_NAMES = ['김하늘','이서준','박지우','최예린','정도윤','강하은','조민재','윤서아','장태오','임채원','한지호','오다인','서준우','신유나','권시우','황보람','안지안','송도현','홍수아','유건우','전하린','고은재','문태윤','배소윤'];
+function demoData(){
+  const roster = DEMO_NAMES.map((n,i) => ({num:i+1, name:n}));
+  const grid = []; let k = 1;
+  for(let r=0; r<5; r++){
+    const row = [];
+    for(let c=0; c<5; c++) row.push(k <= 24 ? k++ : 0);
+    grid.push(row);
+  }
+  const id = 'demo1';
+  return { roster, seats:{grid}, activities:[{id, name:'예시: 학습지 1쪽 풀기', date:today(), archived:false}],
+           checks:{[id]:{1:'done',4:'done',9:'done',13:'skip'}}, seatsUpdated:today(), demo:true };
+}
+
+let S = lsGet(LS_DATA) || demoData();
+let P = Object.assign({mode:'seat', view:'student', cur:null, url:'', key:'', filter:'all', showArch:false, rows:5, cols:5, sizeAuto:false}, lsGet(LS_PREF) || {});
+function saveLocal(){ lsSet(LS_DATA, S); }
+function savePref(){ lsSet(LS_PREF, P); }
+
+const rosterMap = () => { const m = {}; S.roster.forEach(s => m[s.num] = s); return m; };
+const activeActs = () => S.activities.filter(a => !a.archived);
+function curAct(){
+  let a = S.activities.find(x => x.id === P.cur && !x.archived);
+  if(!a){ const list = activeActs(); a = list[list.length-1] || null; P.cur = a ? a.id : null; }
+  return a;
+}
+const stOf = num => { const a = curAct(); return a ? ((S.checks[a.id] || {})[num] || '') : ''; };
+
+/* ======================== 서버 통신 ======================== */
+async function api(action, payload, conn){
+  const c = conn || P;
+  const res = await fetch(c.url, {
+    method:'POST', redirect:'follow',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(Object.assign({action, key:c.key}, payload || {}))
+  });
+  let j;
+  try{ j = await res.json(); }catch(e){ throw new Error('응답을 읽지 못했습니다. 웹 앱 주소와 배포 설정(액세스: 모든 사용자)을 확인하세요.'); }
+  if(!j.ok) throw new Error(j.error || '서버 오류');
+  return j.data;
+}
+
+let pending = 0, chain = Promise.resolve(), failed = [], lastErr = '';
+function send(action, payload){
+  saveLocal();
+  if(!P.url) return;
+  pending++; syncDot();
+  chain = chain
+    .then(() => api(action, payload))
+    .then(() => { lastErr = ''; })
+    .catch(e => { failed.push({action, payload}); lastErr = e.message; showErr(); })
+    .finally(() => { pending--; syncDot(); });
+}
+function showErr(){
+  $('#errMsg').textContent = '저장하지 못한 변경이 ' + failed.length + '건 있습니다. (' + lastErr + ')';
+  $('#errBanner').classList.add('show');
+}
+$('#retryBtn').onclick = () => {
+  $('#errBanner').classList.remove('show');
+  const list = failed.splice(0);
+  list.forEach(f => send(f.action, f.payload));
+};
+function syncDot(){
+  const d = $('#sync');
+  d.className = 'sync';
+  if(!P.url){ d.title = '이 기기에만 저장'; return; }
+  if(failed.length){ d.classList.add('err'); d.title = '저장 실패'; }
+  else if(pending){ d.classList.add('busy'); d.title = '저장 중'; }
+  else { d.classList.add('ok'); d.title = '구글 시트에 저장됨'; }
+}
+
+async function pull(silent){
+  if(!P.url) return;
+  try{
+    const d = await api('getAll');
+    if(pending > 0 || failed.length) return;
+    const next = { roster:d.roster || [], seats:{grid:d.seats || []}, activities:d.activities || [], checks:d.checks || {}, seatsUpdated:d.seatsUpdated || '' };
+    if(JSON.stringify(next) !== JSON.stringify(S)){ S = next; saveLocal(); if(!editMode) renderAll(); }
+    syncDot();
+  }catch(e){
+    $('#sync').className = 'sync err';
+    if(!silent) toast('시트에서 불러오지 못했습니다: ' + e.message);
+  }
+}
+setInterval(() => {
+  if(P.url && document.visibilityState === 'visible' && !editMode && !$('#seatDlg').open) pull(true);
+}, 12000);
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') pull(true); });
+
+/* ======================== 체크 ======================== */
+function setStatus(num, st){
+  const a = curAct();
+  if(!a){ toast('먼저 활동을 추가하세요.'); openActDlg(); return; }
+  const m = S.checks[a.id] = S.checks[a.id] || {};
+  if(st) m[num] = st; else delete m[num];
+  send('setChecks', {actId:a.id, entries:[{num, state:st}]});
+  renderBody(); renderCount();
+}
+const toggleDone = num => setStatus(num, stOf(num) === 'done' ? '' : 'done');
+const toggleSkip = num => setStatus(num, stOf(num) === 'skip' ? '' : 'skip');
+
+function bulk(fn){
+  const a = curAct(); if(!a) return;
+  const m = S.checks[a.id] = S.checks[a.id] || {};
+  const entries = [];
+  S.roster.forEach(s => { const nx = fn(m[s.num] || ''); if(nx !== (m[s.num] || '')){ if(nx) m[s.num] = nx; else delete m[s.num]; entries.push({num:s.num, state:nx}); } });
+  if(entries.length) send('setChecks', {actId:a.id, entries});
+  renderBody(); renderCount();
+}
+
+/* ======================== 그리기 ======================== */
+function renderAll(){ curAct(); renderHeader(); renderBody(); renderCount(); syncDot(); savePref(); }
+function renderBody(){ P.mode === 'seat' ? renderSeats() : renderList(); }
+
+function renderHeader(){
+  const a = curAct();
+  $('#actName').textContent = a ? a.name : '활동을 추가하세요';
+  $('#actDate').textContent = a && a.date ? a.date : '';
+  $$('.bar .seg button').forEach(b => b.classList.toggle('on', b.dataset.mode === P.mode));
+  $('#seatView').hidden = P.mode !== 'seat';
+  $('#listView').hidden = P.mode !== 'list';
+  $('#demoBanner').classList.toggle('show', !P.url);
+}
+
+let celeShownFor = null, lastAllDone = {};
+function renderCount(){
+  const a = curAct();
+  const m = a ? (S.checks[a.id] || {}) : {};
+  const skip = S.roster.filter(s => m[s.num] === 'skip').length;
+  const total = S.roster.length - skip;
+  const done = S.roster.filter(s => m[s.num] === 'done').length;
+  $('#doneN').textContent = done; $('#totalN').textContent = total;
+  $('#progBar').style.width = total ? (done/total*100) + '%' : '0';
+  const all = !!a && total > 0 && done === total;
+  if(a && all && lastAllDone[a.id] === false) celebrate();
+  if(a) lastAllDone[a.id] = all;
+}
+function celebrate(){
+  const c = $('#cele'); c.classList.add('show');
+  clearTimeout(c._t); c._t = setTimeout(() => c.classList.remove('show'), 2600);
+}
+$('#cele').onclick = () => $('#cele').classList.remove('show');
+
+/* ----- 자리 격자 ----- */
+function normGrid(g){
+  const C = g.reduce((m,r) => Math.max(m, r.length), 0);
+  return g.map(r => { const x = r.slice(); while(x.length < C) x.push(0); return x; });
+}
+let lastRender = {act:null, st:{}};
+let editMode = false, editGrid = null, sel = null;
+
+function renderSeats(){
+  const view = $('#seatView');
+  view.classList.toggle('teacher', P.view === 'teacher');
+  view.classList.toggle('editing', editMode);
+  const gridEl = $('#grid');
+  const rm = rosterMap();
+  const old = view.querySelector('.empty-state'); if(old) old.remove();
+
+  if(!S.roster.length){ showEmpty('명단이 비어 있습니다', '설정에서 학생 명단을 먼저 입력하세요.', 'secRoster'); return; }
+  const G = normGrid(editMode ? editGrid : (S.seats.grid || []));
+  const R = G.length, C = R ? G[0].length : 0;
+  if(!R || !C){ showEmpty('자리표를 올려 주세요', '자리표 엑셀 파일을 올리면 자리별로 체크할 수 있습니다. 그 전에는 명단 보기로 체크하면 됩니다.', 'secSeat'); return; }
+  $('#deskFront').hidden = false; gridEl.hidden = false;
+
+  const flip = P.view === 'teacher';
+  const at = (r,c) => flip ? G[R-1-r][C-1-c] : G[r][c];
+  const sr = r => flip ? R-1-r : r, sc = c => flip ? C-1-c : c;
+  const has = n => n && rm[n];
+  const colT = [], rowT = [];
+  for(let c=0; c<C; c++){ let any = false; for(let r=0; r<R; r++) if(has(at(r,c))) any = true; colT.push(any || editMode ? '1fr' : '.35fr'); }
+  for(let r=0; r<R; r++){ let any = false; for(let c=0; c<C; c++) if(has(at(r,c))) any = true; rowT.push(any || editMode ? '1fr' : '.25fr'); }
+  gridEl.style.gridTemplateColumns = colT.join(' ');
+  gridEl.style.gridTemplateRows = rowT.join(' ');
+
+  const a = curAct();
+  const actId = a ? a.id : null;
+  const animate = lastRender.act === actId;
+  const nowSt = {};
+  let html = '';
+  for(let r=0; r<R; r++) for(let c=0; c<C; c++){
+    const n = at(r,c), s = has(n) ? rm[n] : null;
+    const isSel = editMode && sel && sel.type === 'cell' && sel.r === sr(r) && sel.c === sc(c);
+    if(!s){
+      const unknown = n && !rm[n];
+      html += `<button class="desk ${unknown ? 'unknown' : 'gap'} ${isSel ? 'sel' : ''}" data-r="${sr(r)}" data-c="${sc(c)}" ${editMode || unknown ? '' : 'tabindex="-1" aria-hidden="true"'}>${unknown ? '<span class="nm">'+n+'번?</span>' : ''}</button>`;
+      continue;
+    }
+    const st = editMode ? '' : stOf(n);
+    nowSt[n] = st;
+    const pop = !editMode && animate && st === 'done' && lastRender.st[n] !== 'done';
+    const len = s.name.length;
+    const nmStyle = len > 3 ? ` style="font-size:${(3/len).toFixed(2)}em"` : '';
+    html += `<button class="desk ${st} ${pop ? 'pop' : ''} ${isSel ? 'sel' : ''}" data-num="${n}" data-r="${sr(r)}" data-c="${sc(c)}" aria-label="${n}번 ${esc(s.name)} ${st==='done'?'완료':st==='skip'?'결석':'미완료'}">
+      <span class="no">${n}</span>${st === 'done' ? '<span class="stamp">완료!</span>' : ''}<span class="nm"${st==='done'?'':nmStyle}>${esc(s.name)}</span></button>`;
+  }
+  gridEl.innerHTML = html;
+  lastRender = {act:actId, st:nowSt};
+  fitDesks(R, C);
+  renderTray(G);
+}
+function showEmpty(title, msg, sec){
+  $('#grid').hidden = true; $('#deskFront').hidden = true; $('#tray').innerHTML = '';
+  const d = document.createElement('div'); d.className = 'empty-state';
+  d.innerHTML = `<h2>${esc(title)}</h2><p>${esc(msg)}</p><button>${sec === 'secRoster' ? '명단 입력하기' : '자리표 올리기'}</button>`;
+  d.querySelector('button').onclick = () => openDrawer(sec);
+  $('#seatView').insertBefore(d, $('#seatView').firstChild);
+}
+function renderTray(G){
+  const seated = new Set(G.flat().filter(Boolean));
+  const out = S.roster.filter(s => !seated.has(s.num));
+  const tray = $('#tray');
+  if(!out.length){ tray.innerHTML = ''; return; }
+  tray.innerHTML = `<span>${editMode ? '자리 없는 학생:' : '자리표에 없는 학생:'}</span>` + out.map(s => {
+    const st = editMode ? '' : stOf(s.num);
+    const isSel = editMode && sel && sel.type === 'tray' && sel.num === s.num;
+    return `<button data-num="${s.num}" class="${st} ${isSel ? 'sel' : ''}">${s.num} ${esc(s.name)}${st==='done'?' ✓':st==='skip'?' (결석)':''}</button>`;
+  }).join('');
+}
+function fitDesks(R, C){
+  const g = $('#grid'); const rect = g.getBoundingClientRect();
+  if(!rect.width || !rect.height) return;
+  const cw = rect.width / C, ch = rect.height / R;
+  const fs = Math.max(11, Math.min(cw / 3.7, ch / 2.6, 64));
+  g.style.setProperty('--fs', fs + 'px');
+}
+new ResizeObserver(() => {
+  if(P.mode !== 'seat') return;
+  const G = normGrid(editMode ? editGrid : (S.seats.grid || []));
+  if(G.length) fitDesks(G.length, G[0].length);
+}).observe($('#grid'));
+
+/* 자리 누르기: 짧게 = 완료, 길게(또는 오른쪽 클릭) = 결석 */
+let lpT = null, lpFired = false, lastPtr = 'mouse';
+$('#grid').addEventListener('pointerdown', e => {
+  lastPtr = e.pointerType;
+  const d = e.target.closest('.desk[data-num]');
+  if(!d || editMode || e.pointerType === 'mouse') return;
+  lpFired = false; clearTimeout(lpT);
+  lpT = setTimeout(() => { lpFired = true; toggleSkip(+d.dataset.num); if(navigator.vibrate) navigator.vibrate(30); }, 550);
+});
+['pointerup','pointercancel','pointerleave'].forEach(ev => $('#grid').addEventListener(ev, () => clearTimeout(lpT)));
+$('#grid').addEventListener('contextmenu', e => {
+  const d = e.target.closest('.desk[data-num]');
+  if(!d) return;
+  e.preventDefault();
+  if(!editMode && lastPtr === 'mouse') toggleSkip(+d.dataset.num);
+});
+$('#grid').addEventListener('click', e => {
+  const d = e.target.closest('.desk'); if(!d) return;
+  if(lpFired){ lpFired = false; return; }
+  if(editMode){ editClick({type:'cell', r:+d.dataset.r, c:+d.dataset.c}); return; }
+  if(d.dataset.num) toggleDone(+d.dataset.num);
+});
+$('#tray').addEventListener('click', e => {
+  const b = e.target.closest('button[data-num]'); if(!b) return;
+  if(editMode) editClick({type:'tray', num:+b.dataset.num});
+  else toggleDone(+b.dataset.num);
+});
+
+/* ----- 자리 바꾸기 모드 ----- */
+function startEdit(){
+  if(!S.roster.length){ toast('명단을 먼저 입력하세요.'); return; }
+  editMode = true; sel = null;
+  editGrid = normGrid(S.seats.grid || []);
+  if(!editGrid.length){ const sz = seatSize() || {rows:5, cols:5}; editGrid = Array.from({length:sz.rows}, () => new Array(sz.cols).fill(0)); }
+  P.mode = 'seat'; closeDrawer(); renderAll();
+}
+function endEdit(save){
+  if(save){
+    S.seats.grid = trimGrid(editGrid); S.seatsUpdated = today();
+    send('saveSeats', {grid:S.seats.grid});
+    toast('자리를 저장했습니다.');
+  }
+  editMode = false; editGrid = null; sel = null; renderAll();
+}
+function editClick(t){
+  if(!sel){ sel = t; renderSeats(); return; }
+  const a = sel, b = t; sel = null;
+  if(a.type === 'tray' && b.type === 'tray'){ sel = b; renderSeats(); return; }
+  if(a.type === 'cell' && b.type === 'cell'){
+    const x = editGrid[a.r][a.c]; editGrid[a.r][a.c] = editGrid[b.r][b.c]; editGrid[b.r][b.c] = x;
+  } else {
+    const cell = a.type === 'cell' ? a : b, tr = a.type === 'tray' ? a : b;
+    editGrid[cell.r][cell.c] = tr.num;   // 원래 앉아 있던 학생은 '자리 없는 학생'으로
+  }
+  renderSeats();
+}
+function trimGrid(g){
+  let G = normGrid(g);
+  const rowEmpty = r => r.every(x => !x);
+  while(G.length && rowEmpty(G[0])) G.shift();
+  while(G.length && rowEmpty(G[G.length-1])) G.pop();
+  if(!G.length) return [];
+  const colEmpty = c => G.every(r => !r[c]);
+  while(G[0].length && colEmpty(0)) G = G.map(r => r.slice(1));
+  while(G[0].length && colEmpty(G[0].length-1)) G = G.map(r => r.slice(0,-1));
+  return G;
+}
+$('#addRowBtn').onclick = () => { const C = editGrid[0].length; editGrid.push(new Array(C).fill(0)); renderSeats(); };
+$('#addColBtn').onclick = () => { editGrid.forEach(r => r.push(0)); renderSeats(); };
+$('#trimBtn').onclick = () => { const t = trimGrid(editGrid); editGrid = t.length ? t : [[0]]; sel = null; renderSeats(); };
+$('#editCancel').onclick = () => endEdit(false);
+$('#editDone').onclick = () => endEdit(true);
+$('#editSeatBtn').onclick = startEdit;
+
+/* ----- 명단 보기 ----- */
+function renderList(){
+  $$('.chip').forEach(c => c.classList.toggle('on', c.dataset.filter === P.filter));
+  const list = S.roster.slice().sort((a,b) => a.num - b.num).filter(s => {
+    const st = stOf(s.num);
+    if(P.filter === 'todo') return st === '';
+    if(P.filter === 'done') return st === 'done';
+    return true;
+  });
+  if(!S.roster.length){
+    $('#rows').innerHTML = `<div class="empty-state"><h2>명단이 비어 있습니다</h2><p>설정에서 학생 명단을 입력하세요.</p></div>`;
+    return;
+  }
+  if(!list.length){
+    $('#rows').innerHTML = `<div class="empty-state"><h2>${P.filter === 'todo' ? '남은 학생이 없습니다' : '아직 완료한 학생이 없습니다'}</h2></div>`;
+    return;
+  }
+  $('#rows').innerHTML = list.map(s => {
+    const st = stOf(s.num);
+    return `<div class="row ${st}">
+      <button class="main" data-num="${s.num}"><span class="n">${s.num}</span><span class="nm">${esc(s.name)}</span>
+        <span class="pill">${st === 'done' ? '완료!' : st === 'skip' ? '결석' : '○'}</span></button>
+      <button class="skipbtn" data-skip="${s.num}">${st === 'skip' ? '결석 취소' : '결석'}</button></div>`;
+  }).join('');
+}
+$('#rows').addEventListener('click', e => {
+  const m = e.target.closest('[data-num]'), k = e.target.closest('[data-skip]');
+  if(k) toggleSkip(+k.dataset.skip); else if(m) toggleDone(+m.dataset.num);
+});
+$$('.chip').forEach(c => c.onclick = () => { P.filter = c.dataset.filter; savePref(); renderList(); });
+$('#allDone').onclick = () => bulk(st => st === '' ? 'done' : st);
+$('#clearAll').onclick = () => { if(confirm('이 활동의 체크를 모두 지울까요?')) bulk(() => ''); };
+
+/* ======================== 활동 ======================== */
+function renderActMenu(){
+  const list = activeActs().slice().reverse();
+  const cur = curAct();
+  const rows = list.map(a => {
+    const m = S.checks[a.id] || {};
+    const done = Object.values(m).filter(v => v === 'done').length;
+    return `<button data-id="${esc(a.id)}" class="${cur && cur.id === a.id ? 'on' : ''}"><span>${esc(a.name)}</span><span class="meta">${esc(a.date || '')} · ${done}명 완료</span></button>`;
+  }).join('');
+  $('#actMenu').innerHTML = (rows || '<p class="hint" style="padding:10px">아직 활동이 없습니다.</p>') +
+    `<button class="foot" data-manage="1">활동 이름 바꾸기·보관·삭제</button>`;
+}
+$('#actBtn').onclick = e => {
+  e.stopPropagation();
+  const m = $('#actMenu');
+  if(m.hidden){ renderActMenu(); m.hidden = false; $('#actBtn').setAttribute('aria-expanded','true'); }
+  else closeActMenu();
+};
+function closeActMenu(){ $('#actMenu').hidden = true; $('#actBtn').setAttribute('aria-expanded','false'); }
+$('#actMenu').onclick = e => {
+  const b = e.target.closest('button'); if(!b) return;
+  if(b.dataset.manage){ closeActMenu(); openDrawer('secActs'); return; }
+  P.cur = b.dataset.id; closeActMenu(); renderAll();
+};
+document.addEventListener('click', e => { if(!e.target.closest('.act-wrap')) closeActMenu(); });
+
+function openActDlg(){ $('#actIn').value = ''; $('#actDateIn').value = today(); $('#actDlg').showModal(); $('#actIn').focus(); }
+$('#addActBtn').onclick = openActDlg;
+$('#actDlg').addEventListener('close', () => {
+  if($('#actDlg').returnValue !== 'ok') return;
+  const name = $('#actIn').value.trim(); if(!name) return;
+  const a = {id:uid(), name, date:$('#actDateIn').value || '', archived:false};
+  S.activities.push(a); S.checks[a.id] = {}; P.cur = a.id;
+  lastAllDone[a.id] = false;
+  send('addActivity', {activity:a});
+  renderAll(); toast(`'${name}' 활동을 추가했습니다.`);
+});
+
+function renderActMgr(){
+  const list = S.activities.slice().reverse().filter(a => P.showArch || !a.archived);
+  $('#actMgr').innerHTML = list.length ? list.map(a => `
+    <div class="it ${a.archived ? 'arch' : ''}" data-id="${esc(a.id)}">
+      <input class="mName" value="${esc(a.name)}" aria-label="활동 이름">
+      <span class="meta" style="align-self:center;font-size:13px;color:var(--muted)">${a.archived ? '보관됨' : ''}</span>
+      <div class="acts"><input type="date" class="mDate" value="${esc(a.date || '')}" aria-label="날짜"><span></span>
+        <button data-op="arch">${a.archived ? '꺼내기' : '보관'}</button><button data-op="del">삭제</button></div>
+    </div>`).join('') : '<p class="hint">활동이 없습니다.</p>';
+}
+$('#actMgr').addEventListener('change', e => {
+  const it = e.target.closest('.it'); if(!it) return;
+  const a = S.activities.find(x => x.id === it.dataset.id); if(!a) return;
+  if(e.target.classList.contains('mName')){ const v = e.target.value.trim(); if(!v){ e.target.value = a.name; return; } a.name = v; }
+  if(e.target.classList.contains('mDate')) a.date = e.target.value;
+  send('updateActivity', {activity:a}); renderHeader();
+});
+$('#actMgr').addEventListener('click', e => {
+  const b = e.target.closest('button[data-op]'); if(!b) return;
+  const id = b.closest('.it').dataset.id;
+  const a = S.activities.find(x => x.id === id); if(!a) return;
+  if(b.dataset.op === 'arch'){ a.archived = !a.archived; send('updateActivity', {activity:a}); }
+  if(b.dataset.op === 'del'){
+    if(!confirm(`'${a.name}' 활동과 체크 기록을 시트에서도 지웁니다. 지울까요?`)) return;
+    S.activities = S.activities.filter(x => x.id !== id); delete S.checks[id];
+    send('deleteActivity', {id});
+  }
+  renderActMgr(); renderAll();
+});
+$('#showArch').onchange = e => { P.showArch = e.target.checked; savePref(); renderActMgr(); };
+
+/* ======================== 설정 서랍 ======================== */
+function openDrawer(sec){
+  $('#inUrl').value = P.url; $('#inKey').value = P.key;
+  $('#connState').textContent = P.url ? '연결됨: 체크가 구글 시트에 저장됩니다.' : '아직 연결하지 않았습니다. 설치 안내서의 3단계에서 복사한 주소를 넣으세요.';
+  $('#rosterTa').value = S.roster.slice().sort((a,b) => a.num - b.num).map(s => s.num + ' ' + s.name).join('\n');
+  const G = S.seats.grid || [];
+  const seated = G.flat().filter(Boolean).length;
+  $('#seatInfo').textContent = G.length ? `지금 자리표: ${seated}명 배치${S.seatsUpdated ? ' · ' + S.seatsUpdated + ' 적용' : ''}` : '아직 자리표가 없습니다.';
+  $$('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.view === P.view));
+  syncSizeUI();
+  $('#showArch').checked = !!P.showArch;
+  renderActMgr();
+  $('#scrim').hidden = false; $('#drawer').hidden = false;
+  if(sec){ const el = document.getElementById(sec); if(el) setTimeout(() => el.scrollIntoView({block:'start'}), 30); }
+}
+function closeDrawer(){ $('#scrim').hidden = true; $('#drawer').hidden = true; }
+$('#setBtn').onclick = () => openDrawer();
+$('#demoGo').onclick = () => openDrawer('secConn');
+$('#drClose').onclick = closeDrawer;
+$('#scrim').onclick = closeDrawer;
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && !$('#drawer').hidden) closeDrawer(); });
+
+$('#connBtn').onclick = async () => {
+  const url = $('#inUrl').value.trim(), key = $('#inKey').value;
+  if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)){ toast('주소는 https://script.google.com/.../exec 형태여야 합니다.'); return; }
+  $('#connBtn').disabled = true; $('#connBtn').textContent = '연결 중…';
+  try{
+    const d = await api('getAll', {}, {url, key});
+    P.url = url; P.key = key; P.cur = null; savePref();
+    S = { roster:d.roster || [], seats:{grid:d.seats || []}, activities:d.activities || [], checks:d.checks || {}, seatsUpdated:d.seatsUpdated || '' };
+    failed = []; $('#errBanner').classList.remove('show');
+    saveLocal(); renderAll(); openDrawer();
+    toast(S.roster.length ? `연결했습니다. 학생 ${S.roster.length}명을 불러왔습니다.` : '연결했습니다. 이제 명단을 입력하세요.');
+  }catch(e){ toast('연결 실패: ' + e.message); }
+  finally{ $('#connBtn').disabled = false; $('#connBtn').textContent = '연결하기'; }
+};
+$('#disconnBtn').onclick = () => {
+  if(!confirm('이 기기에서 시트 연결을 끊을까요? (시트의 데이터는 그대로 남습니다)')) return;
+  P.url = ''; P.key = ''; savePref(); S = demoData(); saveLocal(); renderAll(); openDrawer();
+};
+$('#linkBtn').onclick = async () => {
+  if(!P.url){ toast('먼저 연결하세요.'); return; }
+  const link = location.origin + location.pathname + '#u=' + encodeURIComponent(P.url) + '&k=' + encodeURIComponent(P.key);
+  try{ await navigator.clipboard.writeText(link); toast('연결 링크를 복사했습니다. 내 다른 기기에서 열어 보세요.'); }
+  catch(e){ prompt('아래 링크를 복사하세요', link); }
+};
+$$('#viewSeg button').forEach(b => b.onclick = () => {
+  P.view = b.dataset.view; savePref();
+  $$('#viewSeg button').forEach(x => x.classList.toggle('on', x === b));
+  renderAll();
+});
+
+/* 명단 저장 */
+$('#rosterSave').onclick = () => {
+  const lines = $('#rosterTa').value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const out = []; let auto = 1; const seen = new Set();
+  for(const l of lines){
+    const m = l.match(/^(\d+)[\s\t.,)번:-]*(.+)$/);
+    let num, name;
+    if(m){ num = parseInt(m[1],10); name = m[2].trim(); } else { num = auto; name = l; }
+    name = name.replace(/\s+/g,' ');
+    if(!name || seen.has(num)) { toast(`${num}번이 두 번 나옵니다. 확인해 주세요.`); return; }
+    seen.add(num); out.push({num, name}); auto = num + 1;
+  }
+  if(!out.length){ toast('명단이 비어 있습니다.'); return; }
+  S.roster = out.sort((a,b) => a.num - b.num); delete S.demo;
+  send('saveRoster', {roster:S.roster});
+  renderAll(); openDrawer('secRoster'); toast(`${out.length}명 명단을 저장했습니다.`);
+};
+
+/* ======================== 자리표 읽기 ======================== */
+/*PARSE-START*/
+const FRONT_RE = /교탁|칠판|교단|선생님|^\(?\s*앞\s*\)?$/;
+const LABEL_RE = /학년|자리|배치|창문|창가|복도|출입|앞문|뒷문|사물함|게시판|분단|모둠|\d+\s*월|\d+\s*주|^뒤$|TV|tv|텔레비전|모니터/;
+
+function editDist(a, b){
+  const d = Array.from({length:a.length+1}, (_, i) => [i]);
+  for(let j=1; j<=b.length; j++) d[0][j] = j;
+  for(let i=1; i<=a.length; i++) for(let j=1; j<=b.length; j++)
+    d[i][j] = Math.min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+
+/* 칸 글자 하나 → 명단의 학생 (못 찾으면 null) */
+function makeMatcher(roster, allowFuzzy){
+  const key = s => s.replace(/\s/g,'');
+  const byName = {};
+  roster.forEach(s => (byName[key(s.name)] = byName[key(s.name)] || []).push(s));
+  const numMatch = n => {
+    let c = roster.filter(s => s.num === n); if(c.length === 1) return c[0];
+    c = roster.filter(s => s.num % 100 === n % 100); return c.length === 1 ? c[0] : null;
+  };
+  return t => {
+    const letters = t.replace(/[^가-힣A-Za-z]/g,'');
+    const dm = t.match(/\d+/); const n = dm ? parseInt(dm[0],10) : null;
+    if(letters && letters !== '번'){
+      let cand = byName[letters];
+      if(!cand) cand = roster.filter(s => key(s.name).length >= 2 && key(t).includes(key(s.name)));
+      if(cand.length === 1) return {st:cand[0], how:'name'};
+      if(cand.length > 1 && n != null){ const s = cand.find(x => x.num === n || x.num % 100 === n % 100); return s ? {st:s, how:'name'} : null; }
+      if(allowFuzzy && letters.length >= 2 && letters.length <= 5){
+        const near = roster.filter(s => key(s.name).length === letters.length && editDist(key(s.name), letters) === 1);
+        if(near.length === 1) return {st:near[0], how:'name', fuzzy:t};
+      }
+      return null;
+    }
+    if(n != null) { const s = numMatch(n); return s ? {st:s, how:'num'} : null; }
+    return null;
+  };
+}
+
+/* 엑셀·CSV·붙여넣기: 칸 위치 그대로 */
+function parseSeatAoa(aoa, frontOpt, roster){
+  const match = makeMatcher(roster, false);
+  const hits = [], unmatched = [], frontRows = [];
+  aoa.forEach((row, r) => (row || []).forEach((v, c) => {
+    const t = String(v == null ? '' : v).replace(/\s+/g,' ').trim();
+    if(!t) return;
+    if(FRONT_RE.test(t.replace(/\s/g,''))){ frontRows.push(r); return; }
+    const m = match(t);
+    if(m) hits.push({r, c, num:m.st.num, how:m.how});
+    else if(!LABEL_RE.test(t)) unmatched.push(t);
+  }));
+
+  const keep = [], dropped = [], dups = [];
+  const byNum = {};
+  hits.forEach(h => (byNum[h.num] = byNum[h.num] || []).push(h));
+  Object.values(byNum).forEach(list => {
+    const named = list.filter(h => h.how === 'name');
+    const k = named[0] || list[0];
+    keep.push(k);
+    list.forEach(h => { if(h !== k) dropped.push(h); });
+    if(named.length > 1) dups.push(k.num);
+  });
+  if(!keep.length) return {grid:[], unmatched, missing:roster.map(s => s.num), dups, fuzzy:[], frontFound:null, count:0};
+
+  const minR = Math.min(...keep.map(h => h.r)), maxR = Math.max(...keep.map(h => h.r));
+  const minC = Math.min(...keep.map(h => h.c)), maxC = Math.max(...keep.map(h => h.c));
+  let G = [];
+  for(let r = minR; r <= maxR; r++){ const row = []; for(let c = minC; c <= maxC; c++) row.push(0); G.push(row); }
+  keep.forEach(h => { G[h.r - minR][h.c - minC] = h.num; });
+
+  const droppedCols = new Set(dropped.map(h => h.c - minC));
+  G = G.filter(row => row.some(Boolean));
+  const C = G[0].length; const keepCols = []; let prevEmpty = false;
+  for(let c = 0; c < C; c++){
+    const empty = G.every(row => !row[c]);
+    if(!empty){ keepCols.push(c); prevEmpty = false; continue; }
+    if(droppedCols.has(c)) continue;
+    if(!prevEmpty){ keepCols.push(c); prevEmpty = true; }
+  }
+  G = G.map(row => keepCols.map(c => row[c]));
+
+  let frontFound = null;
+  if(frontRows.length){
+    const avg = frontRows.reduce((a,b) => a + b, 0) / frontRows.length;
+    frontFound = avg > (minR + maxR) / 2 ? 'bottom' : 'top';
+  }
+  const front = frontOpt === 'auto' ? (frontFound || 'top') : frontOpt;
+  if(front === 'bottom') G = G.reverse().map(row => row.slice().reverse());
+
+  const placed = new Set(keep.map(h => h.num));
+  return {grid:G, unmatched, missing:roster.filter(s => !placed.has(s.num)).map(s => s.num), dups, fuzzy:[], frontFound, count:keep.length};
+}
+
+/* 1차원 묶기: 위치값들을 k개(0이면 자동) 무리로 */
+function cluster1D(vals, k, thr){
+  const order = vals.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]);
+  const gaps = [];
+  for(let i = 1; i < order.length; i++) gaps.push({g:order[i][0] - order[i-1][0], i});
+  const sig = gaps.filter(g => g.g > thr);
+  const cuts = (k ? sig.sort((a, b) => b.g - a.g).slice(0, k - 1) : sig).map(g => g.i).sort((a, b) => a - b);
+  const grp = new Array(vals.length); let gi = 0, ci = 0;
+  order.forEach(([, idx], j) => { if(ci < cuts.length && j === cuts[ci]){ gi++; ci++; } grp[idx] = gi; });
+  let n = gi + 1;
+  if(k && n < k && n > 1){
+    // 한 줄(열)이 통째로 비었을 때: 간격으로 빈 줄 자리를 추정
+    const centers = [];
+    for(let g = 0; g < n; g++){ const vs = order.filter(o => grp[o[1]] === g).map(o => o[0]); centers.push(vs.reduce((a, b) => a + b, 0) / vs.length); }
+    let pitch = Infinity;
+    for(let g = 1; g < n; g++) pitch = Math.min(pitch, centers[g] - centers[g-1]);
+    const map = centers.map(c => Math.round((c - centers[0]) / pitch));
+    if(map[map.length - 1] < k){ for(let i = 0; i < grp.length; i++) grp[i] = map[grp[i]]; n = map[map.length - 1] + 1; }
+  }
+  return {grp, n};
+}
+
+/* PDF·사진: 글자 조각의 위치로 자리 배치 */
+function parseTokens(tokens, frontOpt, roster, size){
+  const match = makeMatcher(roster, true);
+  const hits = [], unmatched = [], fronts = [];
+  tokens.forEach(t => {
+    const s = t.str.replace(/\s+/g,' ').trim(); if(!s) return;
+    if(FRONT_RE.test(s.replace(/\s/g,''))){ fronts.push(t); return; }
+    const m = match(s);
+    if(m) hits.push(Object.assign({}, t, {num:m.st.num, how:m.how, fuzzy:m.fuzzy}));
+    else if(/^[가-힣]{2,5}$/.test(s.replace(/[\s\d.]/g,'')) && !LABEL_RE.test(s)) unmatched.push(s);
+  });
+  let use = hits.filter(h => h.how === 'name');
+  if(!use.length) use = hits;
+  const byNum = {}, dups = [];
+  use.forEach(h => (byNum[h.num] = byNum[h.num] || []).push(h));
+  const keep = Object.values(byNum).map(list => {
+    if(list.length > 1) dups.push(list[0].num);
+    return list.find(h => !h.fuzzy) || list[0];
+  });
+  if(!keep.length) return {grid:[], unmatched, missing:roster.map(s => s.num), dups, fuzzy:[], frontFound:null, count:0};
+
+  const med = a => { const s = a.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+  const h = med(keep.map(k => k.h)) || 10;
+  const rows = cluster1D(keep.map(k => k.cy), size ? size.rows : 0, h * 0.9);
+  const cols = cluster1D(keep.map(k => k.cx), size ? size.cols : 0, h * 1.6);
+  const R = Math.max(rows.n, size ? size.rows : 0), C = Math.max(cols.n, size ? size.cols : 0);
+  let G = Array.from({length:R}, () => new Array(C).fill(0));
+  const clash = [];
+  keep.forEach((k, i) => {
+    const r = rows.grp[i], c = cols.grp[i];
+    if(G[r][c]) clash.push(k.num); else G[r][c] = k.num;
+  });
+
+  let frontFound = null;
+  if(fronts.length){
+    const fy = fronts.reduce((a, t) => a + t.cy, 0) / fronts.length;
+    const my = keep.reduce((a, t) => a + t.cy, 0) / keep.length;
+    frontFound = fy > my ? 'bottom' : 'top';
+  }
+  const front = frontOpt === 'auto' ? (frontFound || 'top') : frontOpt;
+  if(front === 'bottom') G = G.reverse().map(row => row.slice().reverse());
+
+  const placed = new Set(G.flat().filter(Boolean));
+  const rm = {}; roster.forEach(s => rm[s.num] = s);
+  return {
+    grid:G, unmatched, dups:dups.concat(clash),
+    missing:roster.filter(s => !placed.has(s.num)).map(s => s.num),
+    fuzzy:keep.filter(k => k.fuzzy && placed.has(k.num)).map(k => ({num:k.num, read:k.fuzzy})),
+    frontFound, count:placed.size
+  };
+}
+/*PARSE-END*/
+
+/* 정해 둔 배열(예: 5×5)에 맞추기 — 엑셀·붙여넣기용 */
+function fitSize(res){
+  const sz = seatSize();
+  if(!sz || !res.grid.length) return res;
+  const R = res.grid.length, C = res.grid[0].length;
+  if(R > sz.rows || C > sz.cols){ res.sizeWarn = `읽어 온 자리표가 ${R}줄 × ${C}칸이라 설정한 ${sz.rows}줄 × ${sz.cols}칸보다 큽니다. 그대로 적용합니다.`; return res; }
+  const G = res.grid.map(row => row.concat(new Array(sz.cols - C).fill(0)));
+  while(G.length < sz.rows) G.push(new Array(sz.cols).fill(0));
+  res.grid = G; return res;
+}
+function seatSize(){
+  if(P.sizeAuto) return null;
+  const rows = Math.max(1, Math.min(15, parseInt(P.rows, 10) || 5));
+  const cols = Math.max(1, Math.min(15, parseInt(P.cols, 10) || 5));
+  return {rows, cols};
+}
+
+/* ----- PDF·사진 읽기 (모두 이 브라우저 안에서 처리, 파일은 어디에도 보내지 않음) ----- */
+const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+const PDFJS_W = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+function loadScript(src){
+  return new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = src;
+    s.onload = res; s.onerror = () => rej(new Error('읽기 도구를 불러오지 못했습니다. 인터넷 연결을 확인하세요.'));
+    document.head.appendChild(s);
+  });
+}
+function busy(msg){ const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); }
+
+/* PDF 글자 조각을 줄 단위로 이어 붙여 '칸 글자'로 만듦 */
+function mergeItems(items){
+  const parts = [];
+  items.forEach(it => {
+    // 한 조각 안에 큰 공백으로 여러 칸이 붙어 있으면 나눔
+    const segs = it.str.split(/\s{2,}/);
+    if(segs.length === 1){ parts.push(it); return; }
+    const per = it.w / Math.max(1, it.str.length); let off = 0;
+    segs.forEach(sg => {
+      const at = it.str.indexOf(sg, off);
+      parts.push({str:sg, x:it.x + at * per, y:it.y, w:sg.length * per, h:it.h});
+      off = at + sg.length;
+    });
+  });
+  parts.sort((a, b) => a.y - b.y || a.x - b.x);
+  const lines = [];
+  parts.forEach(p => {
+    const ln = lines.find(l => Math.abs(l.y - p.y) < Math.max(l.h, p.h) * 0.5);
+    if(ln) ln.items.push(p); else lines.push({y:p.y, h:p.h, items:[p]});
+  });
+  const out = [];
+  lines.forEach(l => {
+    l.items.sort((a, b) => a.x - b.x);
+    let cur = null;
+    l.items.forEach(p => {
+      if(cur && p.x - (cur.x + cur.w) < Math.max(cur.h, p.h) * 0.6){ cur.str += (p.x - (cur.x + cur.w) > cur.h * 0.15 ? ' ' : '') + p.str; cur.w = p.x + p.w - cur.x; }
+      else { cur = {str:p.str, x:p.x, y:p.y, w:p.w, h:p.h}; out.push(cur); }
+    });
+  });
+  return out.map(t => ({str:t.str.trim(), cx:t.x + t.w / 2, cy:t.y + t.h / 2, w:t.w, h:t.h})).filter(t => t.str);
+}
+
+async function ocrCanvas(canvas){
+  if(!window.Tesseract){ busy('글자 인식 도구를 불러오는 중… (처음 한 번은 조금 걸립니다)'); await loadScript(TESS); }
+  const worker = await Tesseract.createWorker('kor', 1, {
+    logger: m => { if(m.status === 'recognizing text') busy('사진 속 글자 읽는 중… ' + Math.round(m.progress * 100) + '%'); }
+  });
+  try{
+    const { data } = await worker.recognize(canvas);
+    return (data.words || []).map(w => ({
+      str:w.text, cx:(w.bbox.x0 + w.bbox.x1) / 2, cy:(w.bbox.y0 + w.bbox.y1) / 2,
+      w:w.bbox.x1 - w.bbox.x0, h:w.bbox.y1 - w.bbox.y0
+    }));
+  } finally { await worker.terminate(); }
+}
+
+async function readPdf(buf){
+  busy('PDF 읽는 중…');
+  if(!window.pdfjsLib){ await loadScript(PDFJS); pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_W; }
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const page = await pdf.getPage(1);
+  const vp = page.getViewport({scale:1});
+  const tc = await page.getTextContent();
+  const items = tc.items.filter(it => it.str && it.str.trim()).map(it => {
+    const t = pdfjsLib.Util.transform(vp.transform, it.transform);
+    const h = Math.hypot(t[2], t[3]) || 10;
+    const w = it.width || h * it.str.length;
+    return {str:it.str, x:t[4], y:t[5] - h, w, h};
+  });
+  const tokens = mergeItems(items);
+  const hangul = tokens.filter(t => /[가-힣]{2,}/.test(t.str)).length;
+  if(hangul >= 3) return {tokens, how:'text'};
+  // 글자 정보가 없는 스캔 PDF → 그림으로 그려서 글자 인식
+  const vp2 = page.getViewport({scale:2.5});
+  const cv = document.createElement('canvas'); cv.width = vp2.width; cv.height = vp2.height;
+  await page.render({canvasContext:cv.getContext('2d'), viewport:vp2}).promise;
+  return {tokens: await ocrCanvas(cv), how:'ocr'};
+}
+async function readImage(file){
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('사진을 열지 못했습니다.')); i.src = url; });
+    const scale = Math.min(2.5, 3000 / Math.max(img.width, img.height));
+    const cv = document.createElement('canvas'); cv.width = img.width * scale; cv.height = img.height * scale;
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    return {tokens: await ocrCanvas(cv), how:'ocr'};
+  } finally { URL.revokeObjectURL(url); }
+}
+
+/* ----- 미리보기 ----- */
+let seatSrc = null, seatResult = null;
+function openSeatPreview(src){
+  if(!S.roster.length){ toast('명단을 먼저 저장해야 자리표의 이름을 알아볼 수 있습니다.'); return; }
+  seatSrc = src;
+  $$('input[name=front]').forEach(r => r.checked = r.value === 'auto');
+  renderSeatPreview();
+  $('#seatDlg').showModal();
+}
+function renderSeatPreview(){
+  const opt = ($$('input[name=front]').find(r => r.checked) || {}).value || 'auto';
+  const res = seatResult = seatSrc.kind === 'aoa'
+    ? fitSize(parseSeatAoa(seatSrc.data, opt, S.roster))
+    : parseTokens(seatSrc.data, opt, S.roster, seatSize());
+  $('#frontAuto').textContent = res.frontFound ? `(파일에서 '${res.frontFound === 'top' ? '위' : '아래'}'쪽에서 찾음)` : '(못 찾음 → 위쪽으로 봄)';
+  const rm = rosterMap();
+  const G = res.grid; const C = G.length ? G[0].length : 0;
+  $('#seatPrev').style.gridTemplateColumns = `repeat(${C}, minmax(52px,1fr))`;
+  $('#seatPrev').innerHTML = G.flat().map(n => n ? `<div>${n} ${esc(rm[n] ? rm[n].name : '')}</div>` : '<div class="gap"></div>').join('');
+  const nameOf = n => n + '번 ' + (rm[n] ? rm[n].name : '');
+  let w = '';
+  if(seatSrc.how === 'text') w += `<p class="good">PDF 안의 글자를 그대로 읽었습니다.</p>`;
+  if(seatSrc.how === 'ocr') w += `<p class="meh">글자 정보가 없는 파일이라 사진 속 글자를 인식해서 읽었습니다. 자리를 한 번 꼭 확인해 주세요.</p>`;
+  w += `<p class="good">학생 ${res.count}명을 ${G.length}줄 × ${C}칸 자리에 앉혔습니다. 화면에는 교탁이 위쪽(학생 시점)으로 저장됩니다.</p>`;
+  if(res.sizeWarn) w += `<p class="meh">${esc(res.sizeWarn)}</p>`;
+  if(res.fuzzy && res.fuzzy.length) w += `<p class="meh">글자가 조금 달라 비슷한 이름으로 맞춘 학생: ${res.fuzzy.map(f => esc(nameOf(f.num) + ' (읽은 글자: ' + f.read + ')')).join(', ')}</p>`;
+  if(res.missing.length) w += `<p class="meh">자리표에서 찾지 못한 학생: ${res.missing.map(nameOf).map(esc).join(', ')} — 적용 후 '자리 직접 바꾸기'로 앉힐 수 있습니다.</p>`;
+  if(res.unmatched.length) w += `<p class="bad">명단에 없는 글자라 건너뛴 칸: ${res.unmatched.slice(0,12).map(esc).join(', ')}${res.unmatched.length > 12 ? ' 외 ' + (res.unmatched.length - 12) + '칸' : ''}</p>`;
+  if(res.dups.length) w += `<p class="bad">두 번 나왔거나 한 칸에 겹친 학생(첫 자리만 사용): ${res.dups.map(nameOf).map(esc).join(', ')}</p>`;
+  $('#seatWarn').innerHTML = w;
+  $('#seatApply').disabled = !res.count;
+}
+$$('input[name=front]').forEach(r => r.onchange = renderSeatPreview);
+$('#seatCancel').onclick = () => $('#seatDlg').close();
+$('#seatApply').onclick = () => {
+  if(!seatResult || !seatResult.count) return;
+  S.seats.grid = seatResult.grid; S.seatsUpdated = today();
+  send('saveSeats', {grid:S.seats.grid});
+  $('#seatDlg').close(); closeDrawer(); P.mode = 'seat'; renderAll();
+  toast('새 자리표를 적용했습니다.');
+};
+$('#seatFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if(!f) return;
+  if(!S.roster.length){ toast('명단을 먼저 저장해야 자리표의 이름을 알아볼 수 있습니다.'); return; }
+  const ext = (f.name.split('.').pop() || '').toLowerCase();
+  try{
+    if(ext === 'pdf'){
+      const r = await readPdf(new Uint8Array(await f.arrayBuffer()));
+      $('#toast').classList.remove('show');
+      openSeatPreview({kind:'tokens', data:r.tokens, how:r.how});
+    } else if(['png','jpg','jpeg','webp'].includes(ext)){
+      const r = await readImage(f);
+      $('#toast').classList.remove('show');
+      openSeatPreview({kind:'tokens', data:r.tokens, how:r.how});
+    } else {
+      if(typeof XLSX === 'undefined'){ toast('엑셀 읽기 도구를 불러오지 못했습니다. 인터넷 연결을 확인하세요.'); return; }
+      const wb = XLSX.read(new Uint8Array(await f.arrayBuffer()), {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const aoa = XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:''});
+      if(wb.SheetNames.length > 1) toast(`첫 번째 시트('${wb.SheetNames[0]}')를 읽었습니다.`);
+      openSeatPreview({kind:'aoa', data:aoa});
+    }
+  }catch(err){ toast('파일을 읽지 못했습니다: ' + err.message); }
+};
+$('#seatPasteBtn').onclick = () => {
+  const txt = $('#seatPaste').value;
+  if(!txt.trim()){ toast('붙여넣은 내용이 없습니다.'); return; }
+  openSeatPreview({kind:'aoa', data:txt.replace(/\r/g,'').split('\n').map(l => l.split('\t'))});
+};
+/* 자리 배열 크기 */
+function syncSizeUI(){
+  $('#rowsIn').value = P.rows || 5; $('#colsIn').value = P.cols || 5; $('#sizeAuto').checked = !!P.sizeAuto;
+  $('#rowsIn').disabled = $('#colsIn').disabled = !!P.sizeAuto;
+}
+['rowsIn','colsIn'].forEach(id => $('#' + id).onchange = e => { P[id === 'rowsIn' ? 'rows' : 'cols'] = parseInt(e.target.value, 10) || 5; savePref(); });
+$('#sizeAuto').onchange = e => { P.sizeAuto = e.target.checked; savePref(); syncSizeUI(); };
+
+/* ======================== 보기 전환 · 전체 화면 ======================== */
+$$('.bar .seg button').forEach(b => b.onclick = () => {
+  if(editMode && b.dataset.mode !== 'seat'){ toast('자리 바꾸기를 먼저 저장하거나 취소하세요.'); return; }
+  P.mode = b.dataset.mode; renderAll();
+});
+$('#fsBtn').onclick = () => {
+  if(document.fullscreenElement) document.exitFullscreen();
+  else if(document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+};
+
+/* ======================== 시작 ======================== */
+(function init(){
+  const h = new URLSearchParams(location.hash.slice(1));
+  if(h.get('u')){
+    P.url = h.get('u'); P.key = h.get('k') || ''; P.cur = null; savePref();
+    S = {roster:[], seats:{grid:[]}, activities:[], checks:{}, seatsUpdated:''}; saveLocal();
+    history.replaceState(null, '', location.pathname);
+  }
+  activeActs().forEach(a => {
+    const m = S.checks[a.id] || {};
+    const skip = S.roster.filter(s => m[s.num] === 'skip').length;
+    lastAllDone[a.id] = S.roster.length - skip > 0 && S.roster.filter(s => m[s.num] === 'done').length === S.roster.length - skip;
+  });
+  renderAll();
+  if(P.url) pull(false);
+})();
+</script>
+</body>
+</html>
